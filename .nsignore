@@ -1,0 +1,9 @@
+# Nightshift ignore file — paths excluded from workspace listings and deploy archives.
+# Syntax mirrors .gitignore: one pattern per line, # for comments, * wildcards supported.
+
+.venv
+.env
+__pycache__
+*.pyc
+node_modules
+.ruff_cache
