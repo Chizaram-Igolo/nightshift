@@ -13,33 +13,24 @@ import click
 import httpx
 
 from nightshift.cli.config import get_auth_headers, get_url
-
-# Patterns to exclude from the archive
-EXCLUDE_PATTERNS = {".git", "__pycache__", ".venv", ".env", "*.pyc", "node_modules", ".ruff_cache"}
-
-
-def _should_exclude(path: str) -> bool:
-    """Check if a path should be excluded from the archive."""
-    parts = path.split(os.sep)
-    for part in parts:
-        if part in EXCLUDE_PATTERNS:
-            return True
-        for pattern in EXCLUDE_PATTERNS:
-            if pattern.startswith("*") and part.endswith(pattern[1:]):
-                return True
-    return False
+from nightshift.nsignore import read_nsignore, should_exclude
 
 
 def _make_archive(project_dir: str) -> bytes:
-    """Create a tar.gz archive of the project directory."""
+    """Create a tar.gz archive of the project directory.
+
+    Patterns from a .nsignore file in *project_dir* (merged with defaults)
+    are used to skip files and directories.
+    """
+    patterns = read_nsignore(project_dir)
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tar:
         for root, dirs, files in os.walk(project_dir):
             # Filter out excluded directories in-place
-            dirs[:] = [d for d in dirs if not _should_exclude(d)]
+            dirs[:] = [d for d in dirs if not should_exclude(d, patterns)]
 
             for f in files:
-                if _should_exclude(f):
+                if should_exclude(f, patterns):
                     continue
                 full_path = os.path.join(root, f)
                 arcname = os.path.relpath(full_path, project_dir)

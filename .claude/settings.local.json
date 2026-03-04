@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs grep -l \"ignore\\\\|filter\\\\|exclude\")",
+      "Bash(bun run pytest tests/test_nsignore.py tests/test_deploy_cli.py -v)",
+      "Bash(python -m pytest tests/test_nsignore.py tests/test_deploy_cli.py -v)"
+    ]
+  }
+}

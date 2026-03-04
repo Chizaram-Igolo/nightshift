@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from nightshift.nsignore import read_nsignore, should_exclude
 from fastapi.responses import FileResponse, JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
@@ -379,10 +380,10 @@ async def list_workspace(
     if not os.path.isdir(ws_dir):
         return {"files": []}
 
-    skip = {".git", "__pycache__", ".venv", "node_modules", ".ruff_cache"}
+    skip = read_nsignore(ws_dir)
     files: list[dict[str, Any]] = []
     for dirpath, dirnames, filenames in os.walk(ws_dir):
-        dirnames[:] = [d for d in dirnames if d not in skip]
+        dirnames[:] = [d for d in dirnames if not should_exclude(d, skip)]
         rel_dir = os.path.relpath(dirpath, ws_dir)
         # Include directories (except the root itself)
         if rel_dir != ".":
@@ -394,6 +395,8 @@ async def list_workspace(
                 "modified_at": datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).isoformat(),
             })
         for fname in filenames:
+            if should_exclude(fname, skip):
+                continue
             full = os.path.join(dirpath, fname)
             rel = os.path.relpath(full, ws_dir)
             st = os.stat(full)
