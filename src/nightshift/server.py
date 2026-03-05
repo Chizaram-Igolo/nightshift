@@ -471,6 +471,49 @@ async def upload_workspace_file(
     return JSONResponse({"path": file_path, "size": len(body)}, status_code=201)
 
 
+@app.delete("/api/agents/{name}/workspace/{file_path:path}")
+async def delete_workspace_file(
+    name: str,
+    file_path: str,
+    tenant_id: str = Depends(_auth_dependency),
+):
+    """Delete a file or directory from a stateful agent's workspace."""
+    registry = _get_registry()
+    agent = await registry.get_agent(tenant_id, name)
+    if not agent:
+        raise HTTPException(status_code=404, detail=f"Agent not found: {name}")
+
+    config = json.loads(agent.config_json)
+    if not config.get("stateful", False):
+        raise HTTPException(status_code=400, detail="Agent is not stateful")
+
+    ws_dir = os.path.realpath(_workspace_dir(agent))
+    resolved = os.path.realpath(os.path.join(ws_dir, file_path))
+
+    # Path traversal protection
+    if not resolved.startswith(ws_dir + os.sep) and resolved != ws_dir:
+        raise HTTPException(status_code=400, detail="Invalid file path")
+
+    if not os.path.exists(resolved):
+        raise HTTPException(status_code=404, detail="File or directory not found")
+
+    try:
+        if os.path.isdir(resolved):
+            shutil.rmtree(resolved)
+            deleted_type = "directory"
+        else:
+            os.remove(resolved)
+            deleted_type = "file"
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete: {str(e)}")
+
+    return {
+        "status": "deleted",
+        "path": file_path,
+        "type": deleted_type,
+    }
+
+
 # ── Run agent ─────────────────────────────────────────────────
 
 def _build_registered_agent(
