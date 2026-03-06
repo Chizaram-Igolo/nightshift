@@ -490,8 +490,8 @@ async def delete_workspace_file(
     ws_dir = os.path.realpath(_workspace_dir(agent))
     resolved = os.path.realpath(os.path.join(ws_dir, file_path))
 
-    # Path traversal protection
-    if not resolved.startswith(ws_dir + os.sep) and resolved != ws_dir:
+    # Path traversal protection — must be strictly inside the workspace
+    if not resolved.startswith(ws_dir + os.sep):
         raise HTTPException(status_code=400, detail="Invalid file path")
 
     if not os.path.exists(resolved):

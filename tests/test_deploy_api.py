@@ -623,6 +623,170 @@ async def test_upload_workspace_file_appears_in_listing(setup_server):
         assert "listed.txt" in paths
 
 
+# ── DELETE /api/agents/{name}/workspace/{file_path} tests ─────
+
+
+@pytest.mark.asyncio
+async def test_delete_workspace_file(setup_server):
+    """DELETE removes an existing file and it no longer appears in the listing."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        await _deploy_stateful_agent(client)
+
+        await client.put(
+            "/api/agents/stateful_agent/workspace/bye.txt",
+            content=b"goodbye",
+            headers=_auth_headers(),
+        )
+
+        r = await client.delete(
+            "/api/agents/stateful_agent/workspace/bye.txt",
+            headers=_auth_headers(),
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["status"] == "deleted"
+        assert data["path"] == "bye.txt"
+        assert data["type"] == "file"
+
+        # Should 404 now
+        r = await client.get(
+            "/api/agents/stateful_agent/workspace/bye.txt",
+            headers=_auth_headers(),
+        )
+        assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_workspace_directory(setup_server):
+    """DELETE removes a nested directory recursively."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        await _deploy_stateful_agent(client)
+
+        await client.put(
+            "/api/agents/stateful_agent/workspace/mydir/file.txt",
+            content=b"data",
+            headers=_auth_headers(),
+        )
+
+        r = await client.delete(
+            "/api/agents/stateful_agent/workspace/mydir",
+            headers=_auth_headers(),
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["status"] == "deleted"
+        assert data["type"] == "directory"
+
+        r = await client.get("/api/agents/stateful_agent/workspace", headers=_auth_headers())
+        paths = [f["path"] for f in r.json()["files"]]
+        assert not any(p.startswith("mydir") for p in paths)
+
+
+@pytest.mark.asyncio
+async def test_delete_workspace_file_not_found(setup_server):
+    """DELETE a non-existent file returns 404."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        await _deploy_stateful_agent(client)
+
+        r = await client.delete(
+            "/api/agents/stateful_agent/workspace/ghost.txt",
+            headers=_auth_headers(),
+        )
+        assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_workspace_file_path_traversal(setup_server):
+    """Path traversal with encoded ../ returns 400."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        await _deploy_stateful_agent(client)
+
+        r = await client.delete(
+            "/api/agents/stateful_agent/workspace/%2e%2e/%2e%2e/etc/passwd",
+            headers=_auth_headers(),
+        )
+        assert r.status_code == 400
+        assert "Invalid file path" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_delete_workspace_file_not_stateful(setup_server):
+    """DELETE on a non-stateful agent returns 400."""
+    archive = _make_archive({"agent.py": "pass"})
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        await client.post(
+            "/api/agents",
+            data={
+                "name": "static_agent",
+                "source_filename": "agent.py",
+                "function_name": "static_agent",
+                "config_json": json.dumps({"stateful": False}),
+            },
+            files={"archive": ("archive.tar.gz", archive, "application/gzip")},
+            headers=_auth_headers(),
+        )
+
+        r = await client.delete(
+            "/api/agents/static_agent/workspace/file.txt",
+            headers=_auth_headers(),
+        )
+        assert r.status_code == 400
+        assert "not stateful" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_delete_workspace_file_agent_not_found(setup_server):
+    """DELETE with unknown agent name returns 404."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        r = await client.delete(
+            "/api/agents/ghost_agent/workspace/file.txt",
+            headers=_auth_headers(),
+        )
+        assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_workspace_file_removed_from_listing(setup_server):
+    """Deleted file no longer appears in GET /workspace listing."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        await _deploy_stateful_agent(client)
+
+        await client.put(
+            "/api/agents/stateful_agent/workspace/listed.txt",
+            content=b"data",
+            headers=_auth_headers(),
+        )
+        await client.put(
+            "/api/agents/stateful_agent/workspace/keep.txt",
+            content=b"keep",
+            headers=_auth_headers(),
+        )
+
+        await client.delete(
+            "/api/agents/stateful_agent/workspace/listed.txt",
+            headers=_auth_headers(),
+        )
+
+        r = await client.get("/api/agents/stateful_agent/workspace", headers=_auth_headers())
+        paths = [f["path"] for f in r.json()["files"]]
+        assert "listed.txt" not in paths
+        assert "keep.txt" in paths
+
+
 # ── Run status & interrupt tests ──────────────────────────────
 
 
